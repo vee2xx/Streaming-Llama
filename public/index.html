@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enter a prompt</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>OpenAI Prompter</h1>
+    <form id="promptForm">
+      <textarea id="promptInput" placeholder="Enter your prompt here..." required></textarea>
+      <button type="submit">Submit</button>
+    </form>
+    <div id="responseContainer"></div>
+  </div>
+
+  <script>
+    document.getElementById('promptForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const promptInput = document.getElementById('promptInput');
+      const responseContainer = document.getElementById('responseContainer');
+      
+      const prompt = promptInput.value;
+      promptInput.value = '';
+
+      const response = await fetch('/api/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+
+      const data = await response.json();
+
+      const promptResponse = document.createElement('div');
+      promptResponse.className = 'prompt-response';
+      promptResponse.innerHTML = `<strong>Prompt:</strong> ${prompt}<br><strong>Response:</strong> ${data.response}`;
+
+      responseContainer.appendChild(promptResponse);
+    });
+  </script>
+</body>
+</html>
