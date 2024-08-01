@@ -22,6 +22,11 @@
           <div class="p-4">
               <div class="row">
                   <div class="col">
+                    <div class="prompt-response">
+                        <strong>Response:</strong>
+                    </div>
+                    <ul id="responseContainer" style="list-style-type:none;">
+                    </ul>
                     <h2><img src="/friendly_llama.jpg" alt="friendly lamma" border-radius="50" width="25" height="25">Friendly llama at your service</h2>
                     <form id="promptForm" class="form-group">
                       <textarea id="promptInput" class="form-control" placeholder="Ask me anything..." required></textarea>
@@ -29,7 +34,6 @@
                         <button type="submit" class="btn btn-primary">Submit</button>
                       </div>
                     </form>
-                    <div class="prompt-response"><strong>Response:</strong> </div><div id="responseContainer"></div>
                   </div>
                   </div>
               </div>
@@ -60,10 +64,18 @@
         }
     });
     const eventSource = new EventSource('/stream');
-
+    var currentResponse = document.createElement('li');
+    document.getElementById('responseContainer').appendChild(currentResponse);
     eventSource.onmessage = function(event) {
         const text = event.data;
-        responseContainer.innerHTML += `${text}`;
+        if (text == '[DONE]') {
+            var newResponse = document.createElement('li');
+            document.getElementById('responseContainer').appendChild(newResponse);
+            currentResponse = newResponse
+        } else {
+            // currentResponse = document.getElementById('responseContainer').getElementsByTagName('li').findLast()
+            currentResponse.innerHTML += `${text}`;
+        }
         
     };
 

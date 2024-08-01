@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -36,11 +35,23 @@ type OpenAIStreamResponse struct {
 	} `json:"choices"`
 }
 
-type PromptRequest struct {
+type OpenAIRequest struct {
+	Model     string          `json:"model"`
+	Messages  []OpenAIMessage `json:"messages"`
+	MaxTokens int             `json:"max_tokens"`
+	Stream    bool            `json:"stream"`
+}
+
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type UserPrompt struct {
 	Prompt string `json:"prompt"`
 }
 
-var history []PromptRequest
+var history []OpenAIMessage
 
 func main() {
 	err := godotenv.Load()
@@ -53,8 +64,12 @@ func main() {
 		log.Fatal("OPENAI_API_KEY not set in .env file")
 	}
 
-	chanStream := make(chan string, 10)
+	chanStream := make(chan string)
 	defer close(chanStream)
+
+	history = append(history, OpenAIMessage{Role: "system", Content: "You are an assistant well versed in general knowledge."})
+
+	//TODO: Make the role configurable
 
 	r := gin.Default()
 	r.Static("/public", "./public")
@@ -64,26 +79,19 @@ func main() {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
 	r.POST("/api/prompt", func(c *gin.Context) {
-		var preq PromptRequest
+
 		var req *http.Request
-		if err := c.BindJSON(&preq); err != nil {
+		var prompt UserPrompt
+
+		if err := c.BindJSON(&prompt); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		history = append(history, preq)
+		history = append(history, OpenAIMessage{Role: "user", Content: prompt.Prompt})
+		var openAIRequest OpenAIRequest = OpenAIRequest{Model: "gpt-3.5-turbo-16k", Messages: history, MaxTokens: 150, Stream: true}
 
-		context := ""
-		for _, h := range history {
-			context += h.Prompt + "\n" + h.Prompt + "\n"
-		}
-
-		body, err := json.Marshal(map[string]interface{}{
-			"model":      "gpt-3.5-turbo-16k",
-			"messages":   []interface{}{map[string]interface{}{"role": "user", "content": context}},
-			"max_tokens": 150,
-			"stream":     true,
-		})
+		body, err := json.Marshal(openAIRequest)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -109,14 +117,13 @@ func main() {
 		}
 		defer resp.Body.Close()
 
-		// err = handleStreamResponse(c, resp.Body)
 		scanner := bufio.NewScanner(resp.Body)
 
-		tempResp := ""
-
+		fullResp := ""
+		// var tempBuffer strings.Builder
 		for scanner.Scan() {
 			line := scanner.Text()
-			fmt.Println(line)
+			// fmt.Println(line)
 			if len(line) > 0 {
 				if strings.HasPrefix(line, "data: ") {
 					line = strings.TrimPrefix(line, "data: ")
@@ -128,19 +135,23 @@ func main() {
 						return
 					}
 					if len(openAIResp.Choices) > 0 {
-						//ToDo: Need to handle spaces and punctuation, etc.
-						//Also, handle 'done'
-						respChunk := openAIResp.Choices[0].Delta.Content + " "
-						tempResp += respChunk
+						respChunk := openAIResp.Choices[0].Delta.Content
 						chanStream <- respChunk
-					} else {
-						fmt.Println(tempResp)
+						// tempBuffer.WriteString(respChunk)
+						// if strings.HasSuffix(tempBuffer.String(), " ") || strings.HasSuffix(tempBuffer.String(), "\n") {
+						// 	chanStream <- tempBuffer.String()
+						// 	tempBuffer.Reset()
+						// }
+						fullResp += respChunk
 					}
+				} else {
+					chanStream <- "[DONE]"
 				}
 
 			}
 		}
 
+		history = append(history, OpenAIMessage{Role: "assistant", Content: fullResp})
 		if err := scanner.Err(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -150,12 +161,6 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		// responseText, err := handleResponse(resp.Body)
-
-		// history = append(history, PromptRequest{Prompt: responseText})
-
-		// c.JSON(http.StatusOK, gin.H{"response": responseText})
 	})
 
 	// SSE endpoint that the clients will be listening to
@@ -165,7 +170,6 @@ func main() {
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
 
-		// Allow all origins to access the endpoint (Else you will get CORS error)
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET")
 		c.Header("Access-Control-Allow-Headers", "Content-Type")
@@ -176,11 +180,9 @@ func main() {
 				return true
 			}
 			return false
+
 		})
 	})
-
-	// Parse Static files
-	// r.StaticFile("/", "./index.html")
 
 	r.Run(":3000")
 }
