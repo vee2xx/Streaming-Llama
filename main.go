@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -78,6 +79,16 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
+
+	r.GET("/api/newchat", func(c *gin.Context) {
+		history = nil
+		history = append(history, OpenAIMessage{Role: "system", Content: "You are an assistant well versed in general knowledge."})
+	})
+
+	r.POST("/api/loadHistory", func(c *gin.Context) {
+		//TODO: Load history to continue chat
+	})
+
 	r.POST("/api/prompt", func(c *gin.Context) {
 
 		var req *http.Request
@@ -120,10 +131,10 @@ func main() {
 		scanner := bufio.NewScanner(resp.Body)
 
 		fullResp := ""
-		// var tempBuffer strings.Builder
+		var tempBuffer strings.Builder
 		for scanner.Scan() {
 			line := scanner.Text()
-			// fmt.Println(line)
+			fmt.Println(line)
 			if len(line) > 0 {
 				if strings.HasPrefix(line, "data: ") {
 					line = strings.TrimPrefix(line, "data: ")
@@ -136,16 +147,18 @@ func main() {
 					}
 					if len(openAIResp.Choices) > 0 {
 						respChunk := openAIResp.Choices[0].Delta.Content
-						chanStream <- respChunk
-						// tempBuffer.WriteString(respChunk)
-						// if strings.HasSuffix(tempBuffer.String(), " ") || strings.HasSuffix(tempBuffer.String(), "\n") {
-						// 	chanStream <- tempBuffer.String()
-						// 	tempBuffer.Reset()
-						// }
+						// chanStream <- respChunk
+						if strings.HasPrefix(respChunk, " ") {
+							chanStream <- tempBuffer.String() + " "
+							tempBuffer.Reset()
+						}
+						tempBuffer.WriteString(respChunk)
 						fullResp += respChunk
 					}
 				} else {
+					chanStream <- tempBuffer.String() + " "
 					chanStream <- "[DONE]"
+					tempBuffer.Reset()
 				}
 
 			}
